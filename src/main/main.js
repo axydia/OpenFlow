@@ -267,6 +267,7 @@ let lastPasteLastRequestAt = 0;
 const pendingOverlayFeedbacks = [];
 let currentDictationStartedAt = 0;
 let captureMuteDepth = 0;
+let lastTargetHwnd = 0;
 let suppressStartSoundUntil = 0;
 let suppressStartRequestsUntil = 0;
 let ignoreNextHotkeyRelease = false;
@@ -1690,7 +1691,7 @@ function hasOngoingTranscription() {
   );
 }
 
-function insertTextIntoFocusedApp(text) {
+function insertTextIntoFocusedApp(text, targetHwnd = 0) {
   return new Promise((resolve, reject) => {
     if (process.platform === 'darwin') {
       const previousClipboard = clipboard.readText();
@@ -1743,11 +1744,9 @@ function insertTextIntoFocusedApp(text) {
 
     const scriptPath = path.join(getRuntimeBasePath(), 'scripts', 'send_text.ps1');
     const encodedText = Buffer.from(text, 'utf8').toString('base64');
-    const powershell = spawn(
-      'powershell.exe',
-      ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-EncodedText', encodedText],
-      { windowsHide: true },
-    );
+    const psArgs = ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-EncodedText', encodedText];
+    if (targetHwnd) psArgs.push('-WindowHandle', String(targetHwnd));
+    const powershell = spawn('powershell.exe', psArgs, { windowsHide: true });
 
     let stderr = '';
     let stdout = '';
@@ -2325,7 +2324,7 @@ async function handleServiceEvent(event) {
       recordModelTiming(payload.model || state.model, payload.transcription_ms);
 
       try {
-        await insertTextIntoFocusedApp(pasteText);
+        await insertTextIntoFocusedApp(pasteText, lastTargetHwnd);
       } catch (error) {
         setState({
       error: `Failed to paste text into the active field: ${error.message}`,
@@ -2403,6 +2402,9 @@ function handleHotkeyEvent(event) {
       startListening(hotkeyMode);
       break;
     case 'hotkey-released':
+      if (payload.target_hwnd) {
+        lastTargetHwnd = payload.target_hwnd;
+      }
       setState({
         hotkeyPressed: false,
       });

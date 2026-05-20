@@ -1,6 +1,7 @@
 param(
   [Parameter(Mandatory = $true)]
-  [string]$EncodedText
+  [string]$EncodedText,
+  [string]$WindowHandle = "0"
 )
 
 try {
@@ -15,61 +16,39 @@ if ([string]::IsNullOrEmpty($Text)) {
 
 Add-Type -AssemblyName System.Windows.Forms
 
-function Invoke-ClipboardAction {
-  param(
-    [Parameter(Mandatory = $true)]
-    [scriptblock]$Action,
-
-    [Parameter(Mandatory = $true)]
-    [string]$Operation
-  )
-
-  $lastError = $null
-  for ($attempt = 0; $attempt -lt 6; $attempt++) {
-    try {
-      return & $Action
-    } catch {
-      $lastError = $_
-      Start-Sleep -Milliseconds (40 + ($attempt * 30))
-    }
-  }
-
-  throw "Failed to access the clipboard during '$Operation': $($lastError.Exception.Message)"
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class WinApi {
+  public const uint WM_PASTE = 0x0302;
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string cls, string wnd);
+  [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr w, IntPtr l);
 }
+"@
 
-$previousClipboard = $null
-$hadClipboard = $false
+$hwnd = [long]0
+[long]::TryParse($WindowHandle, [ref]$hwnd) | Out-Null
+$targetWindow = if ($hwnd -gt 0) { [IntPtr]::new($hwnd) } else { [WinApi]::GetForegroundWindow() }
 
-try {
-  $previousClipboard = Invoke-ClipboardAction -Operation 'get-data' -Action {
-    [System.Windows.Forms.Clipboard]::GetDataObject()
-  }
-  $hadClipboard = $previousClipboard -ne $null
-} catch {
-  $previousClipboard = $null
-  $hadClipboard = $false
-}
+# Set clipboard — intentionally not restored so text stays available for manual Ctrl+V
+[System.Windows.Forms.Clipboard]::SetText($Text)
+Start-Sleep -Milliseconds 120
 
-try {
-  Invoke-ClipboardAction -Operation 'set-text' -Action {
-    [System.Windows.Forms.Clipboard]::SetText($Text)
-  } | Out-Null
-  Start-Sleep -Milliseconds 120
-  [System.Windows.Forms.SendKeys]::SendWait('^v')
-  [Console]::Out.WriteLine('__OPENFLOW_PASTE_OK__')
-  Start-Sleep -Milliseconds 220
-} finally {
-  try {
-    if ($hadClipboard) {
-      Invoke-ClipboardAction -Operation 'restore-data' -Action {
-        [System.Windows.Forms.Clipboard]::SetDataObject($previousClipboard, $true)
-      } | Out-Null
-    } else {
-      Invoke-ClipboardAction -Operation 'clear' -Action {
-        [System.Windows.Forms.Clipboard]::Clear()
-      } | Out-Null
-    }
-  } catch {
-    # Best effort: clipboard restore failures should not break the paste operation.
+if ([WinApi]::IsWindow($targetWindow)) {
+  $scintilla = [WinApi]::FindWindowEx($targetWindow, [IntPtr]::Zero, "Scintilla", $null)
+
+  if ($scintilla -ne [IntPtr]::Zero) {
+    # Notepad++ / Scintilla: WM_PASTE direct, no focus required
+    [WinApi]::SendMessage($scintilla, [WinApi]::WM_PASTE, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
+  } else {
+    # Standard apps: bring to front then paste
+    [WinApi]::SetForegroundWindow($targetWindow) | Out-Null
+    Start-Sleep -Milliseconds 80
+    [System.Windows.Forms.SendKeys]::SendWait('^v')
   }
 }
+
+[Console]::Out.WriteLine('__OPENFLOW_PASTE_OK__')

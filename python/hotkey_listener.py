@@ -198,6 +198,18 @@ class HotkeyListener:
             keyboard.Key.cmd_r: "command" if sys.platform == "darwin" else "windows",
             keyboard.Key.space: "space",
             keyboard.Key.esc: "escape",
+            keyboard.Key.f1: "f1",
+            keyboard.Key.f2: "f2",
+            keyboard.Key.f3: "f3",
+            keyboard.Key.f4: "f4",
+            keyboard.Key.f5: "f5",
+            keyboard.Key.f6: "f6",
+            keyboard.Key.f7: "f7",
+            keyboard.Key.f8: "f8",
+            keyboard.Key.f9: "f9",
+            keyboard.Key.f10: "f10",
+            keyboard.Key.f11: "f11",
+            keyboard.Key.f12: "f12",
         }
         token = special_map.get(key)
         if token:
@@ -259,7 +271,14 @@ class HotkeyListener:
                 self.is_pressed = False
                 released_mode = self.active_mode
                 self.active_mode = "hold"
-                self.emit("hotkey-released", {"shortcut": self.hotkey, "mode": released_mode})
+                target_hwnd = 0
+                if sys.platform == "win32":
+                    try:
+                        import ctypes
+                        target_hwnd = ctypes.windll.user32.GetForegroundWindow()
+                    except Exception:
+                        target_hwnd = 0
+                self.emit("hotkey-released", {"shortcut": self.hotkey, "mode": released_mode, "target_hwnd": target_hwnd})
 
     def _hotkey_space_active(self, *, include_current_press: bool = False) -> bool:
         active_tokens = set(self.pressed_tokens)
