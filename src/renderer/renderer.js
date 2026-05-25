@@ -10,6 +10,8 @@ const TRANSLATIONS = {
     appTagline: 'Write at the speed of thought.',
     globalShortcut: 'Global shortcut',
     pasteLastShortcut: 'Paste last',
+    shortcutsTitle: 'Keyboard shortcuts',
+    shortcutsCopy: 'Use + to combine keys. Example: ctrl+f9 or ctrl+alt+space',
     dictionary: 'Dictionary',
     settings: 'Settings',
     streak: 'Streak',
@@ -181,7 +183,7 @@ const TRANSLATIONS = {
 
 Object.assign(TRANSLATIONS, {
   es: { settings: 'Configuración', interfaceLanguage: 'Idioma de la interfaz', interfaceLanguageCopy: 'Busca y cambia el idioma de la app al instante.', searchLanguage: 'Buscar idioma', languageSearchPlaceholder: 'Busca tu idioma...', selectedLanguage: 'Seleccionado', appearance: 'Apariencia', darkMode: 'Modo oscuro', lightMode: 'Modo claro', floatingBar: 'Barra flotante', detectionLanguages: 'Idiomas de detección', transcriptionModels: 'Modelos de transcripción', systemDiagnostics: 'Diagnóstico del sistema', close: 'Cerrar', dictionary: 'Diccionario' },
-  fr: { settings: 'Paramètres', interfaceLanguage: "Langue de l'interface", interfaceLanguageCopy: "Recherchez et changez instantanément la langue de l'application.", searchLanguage: 'Rechercher une langue', languageSearchPlaceholder: 'Recherchez votre langue...', selectedLanguage: 'Sélectionné', appearance: 'Apparence', darkMode: 'Mode sombre', lightMode: 'Mode clair', floatingBar: 'Barre flottante', detectionLanguages: 'Langues de détection', transcriptionModels: 'Modèles de transcription', systemDiagnostics: 'Diagnostic système', close: 'Fermer', dictionary: 'Dictionnaire' },
+  fr: { settings: 'Paramètres', shortcutsTitle: 'Raccourcis clavier', shortcutsCopy: 'Utilisez + pour combiner les touches. Exemple : ctrl+f9 ou ctrl+alt+space', interfaceLanguage: "Langue de l'interface", interfaceLanguageCopy: "Recherchez et changez instantanément la langue de l'application.", searchLanguage: 'Rechercher une langue', languageSearchPlaceholder: 'Recherchez votre langue...', selectedLanguage: 'Sélectionné', appearance: 'Apparence', darkMode: 'Mode sombre', lightMode: 'Mode clair', floatingBar: 'Barre flottante', detectionLanguages: 'Langues de détection', transcriptionModels: 'Modèles de transcription', systemDiagnostics: 'Diagnostic système', close: 'Fermer', dictionary: 'Dictionnaire' },
   de: { settings: 'Einstellungen', interfaceLanguage: 'Sprache der Oberfläche', interfaceLanguageCopy: 'Suche und wechsle die App-Sprache sofort.', searchLanguage: 'Sprache suchen', languageSearchPlaceholder: 'Sprache suchen...', selectedLanguage: 'Ausgewählt', appearance: 'Darstellung', darkMode: 'Dunkelmodus', lightMode: 'Hellmodus', floatingBar: 'Schwebende Leiste', detectionLanguages: 'Erkennungssprachen', transcriptionModels: 'Transkriptionsmodelle', systemDiagnostics: 'Systemdiagnose', close: 'Schließen', dictionary: 'Wörterbuch' },
   it: { settings: 'Impostazioni', interfaceLanguage: "Lingua dell'interfaccia", interfaceLanguageCopy: "Cerca e cambia subito la lingua dell'app.", searchLanguage: 'Cerca lingua', languageSearchPlaceholder: 'Cerca la tua lingua...', selectedLanguage: 'Selezionato', appearance: 'Aspetto', darkMode: 'Modalità scura', lightMode: 'Modalità chiara', floatingBar: 'Barra flottante', detectionLanguages: 'Lingue di rilevamento', transcriptionModels: 'Modelli di trascrizione', systemDiagnostics: 'Diagnostica di sistema', close: 'Chiudi', dictionary: 'Dizionario' },
   nl: { settings: 'Instellingen', interfaceLanguage: 'Interfacetaal', interfaceLanguageCopy: 'Zoek en wissel direct van app-taal.', searchLanguage: 'Taal zoeken', languageSearchPlaceholder: 'Zoek je taal...', selectedLanguage: 'Geselecteerd', appearance: 'Weergave', darkMode: 'Donkere modus', lightMode: 'Lichte modus', floatingBar: 'Zwevende balk', detectionLanguages: 'Detectietalen', transcriptionModels: 'Transcriptiemodellen', systemDiagnostics: 'Systeemdiagnostiek', close: 'Sluiten', dictionary: 'Woordenboek' },
@@ -296,6 +298,8 @@ const els = {
   themeRadios: document.querySelectorAll('input[name="theme"]'),
   interfaceLanguageSearch: document.getElementById('interface-language-search'),
   interfaceLanguageList: document.getElementById('interface-language-list'),
+  shortcutInput: document.getElementById('shortcut-input'),
+  pasteShortcutInput: document.getElementById('paste-shortcut-input'),
   translatable: document.querySelectorAll('[data-i18n]'),
   translatablePlaceholders: document.querySelectorAll('[data-i18n-placeholder]'),
 };
@@ -838,6 +842,12 @@ function renderState(state) {
 
   els.shortcutLabel.textContent = formatShortcut(state.shortcut, state.platform) || '--';
   els.pasteShortcutLabel.textContent = formatShortcut(state.pasteLastShortcut, state.platform) || '--';
+  if (document.activeElement !== els.shortcutInput) {
+    els.shortcutInput.value = state.shortcut || '';
+  }
+  if (document.activeElement !== els.pasteShortcutInput) {
+    els.pasteShortcutInput.value = state.pasteLastShortcut || '';
+  }
   els.activeModelLabel.textContent = `${modelLabel(state.model)} (${state.model})`;
   els.deviceLabel.textContent = state.device ? String(state.device).toUpperCase() : '--';
   els.deviceNote.textContent = state.deviceNote || t('noNotes');
@@ -1017,6 +1027,25 @@ function setupHandlers() {
     renderState(await window.flowLocal.updateSettings({
       keepAllTranscriptions: els.keepAllTranscriptions.checked,
     }));
+  });
+
+  async function applyShortcutInput(input, key) {
+    const value = input.value.trim();
+    if (!value) return;
+    renderState(await window.flowLocal.updateSettings({ [key]: value }));
+  }
+
+  els.shortcutInput.addEventListener('keydown', async (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); await applyShortcutInput(els.shortcutInput, 'shortcut'); }
+  });
+  els.shortcutInput.addEventListener('blur', async () => {
+    await applyShortcutInput(els.shortcutInput, 'shortcut');
+  });
+  els.pasteShortcutInput.addEventListener('keydown', async (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); await applyShortcutInput(els.pasteShortcutInput, 'pasteLastShortcut'); }
+  });
+  els.pasteShortcutInput.addEventListener('blur', async () => {
+    await applyShortcutInput(els.pasteShortcutInput, 'pasteLastShortcut');
   });
 
   els.historySearch.addEventListener('input', () => {

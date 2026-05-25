@@ -706,6 +706,10 @@ function getShortcutFromEnv(name, fallback) {
   return value || fallback;
 }
 
+function normalizeShortcutInput(value) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, '') || state.shortcut;
+}
+
 function formatShortcutForDisplay(shortcut, platform = process.platform) {
   const labels = String(shortcut || '')
     .split('+')
@@ -1130,6 +1134,8 @@ function normalizePersistedState(payload) {
       keepAllTranscriptions,
       dictionaryEntries: normalizeDictionaryEntries(preferencesSource.dictionaryEntries),
       overlayPosition: defaults.overlayPosition,
+      shortcut: getShortcutFromEnv('FLOW_HOTKEY', preferencesSource.shortcut || defaults.shortcut),
+      pasteLastShortcut: getShortcutFromEnv('FLOW_PASTE_LAST_HOTKEY', preferencesSource.pasteLastShortcut || defaults.pasteLastShortcut),
     },
     modelStats: normalizeStats(source.modelStats),
     history: applyHistoryRetention(normalizeHistory(source.history), keepAllTranscriptions),
@@ -1175,6 +1181,8 @@ function savePersistentState() {
       keepAllTranscriptions: state.keepAllTranscriptions,
       dictionaryEntries: state.dictionaryEntries,
       overlayPosition: defaults.overlayPosition,
+      shortcut: state.shortcut,
+      pasteLastShortcut: state.pasteLastShortcut,
     },
     modelStats: state.modelStats,
     history: applyHistoryRetention(state.history, state.keepAllTranscriptions),
@@ -2798,6 +2806,17 @@ function bootDictationService() {
   });
 }
 
+function restartHotkeyListener() {
+  if (hotkeyProcess && !hotkeyProcess.killed) {
+    sendHotkeyCommand('shutdown');
+    hotkeyProcess.kill();
+    hotkeyProcess = null;
+    hotkeyReader = null;
+  }
+  setState({ hotkeyOnline: false });
+  bootHotkeyListener();
+}
+
 function bootHotkeyListener() {
   if (hotkeyProcess && !hotkeyProcess.killed) {
     return;
@@ -2977,10 +2996,15 @@ async function applySettings(patch) {
   const nextDictionaryEntries = Object.prototype.hasOwnProperty.call(patch, 'dictionaryEntries')
     ? normalizeDictionaryEntries(patch.dictionaryEntries)
     : state.dictionaryEntries;
+  const nextShortcut = patch.shortcut ? normalizeShortcutInput(patch.shortcut) : state.shortcut;
+  const nextPasteLastShortcut = patch.pasteLastShortcut
+    ? normalizeShortcutInput(patch.pasteLastShortcut)
+    : state.pasteLastShortcut;
   const nextHistory = applyHistoryRetention(state.history, nextKeepAllTranscriptions);
 
   const modelChanged = nextModel !== state.model;
   const languagesChanged = nextLanguages.join(',') !== state.allowedLanguages.join(',');
+  const shortcutChanged = nextShortcut !== state.shortcut || nextPasteLastShortcut !== state.pasteLastShortcut;
   const interfaceLanguageChanged = nextInterfaceLanguage !== state.interfaceLanguage;
   const overlayChanged = nextShowOverlayBar !== state.showOverlayBar;
   const soundEffectsChanged = nextSoundEffectsEnabled !== state.soundEffectsEnabled;
@@ -3056,6 +3080,8 @@ async function applySettings(patch) {
     keepAllTranscriptions: nextKeepAllTranscriptions,
     history: nextHistory,
     dictionaryEntries: nextDictionaryEntries,
+    shortcut: nextShortcut,
+    pasteLastShortcut: nextPasteLastShortcut,
     notice,
     error: '',
   });
@@ -3067,6 +3093,10 @@ async function applySettings(patch) {
 
   if (launchAtLoginChanged) {
     syncLaunchAtLoginSetting();
+  }
+
+  if (shortcutChanged) {
+    restartHotkeyListener();
   }
 
   if (modelChanged) {
